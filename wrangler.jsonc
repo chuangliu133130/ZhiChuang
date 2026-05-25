@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zhi-chuang-tech",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-25",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "ZC_LEADS",
+      "id": "2a5a0d9728124a98abbc9822606a05a4"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "zhi-chuang-tech",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250428.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.94.0"
+  },
+  "dependencies": {
+    "hono": "^4.7.0"
+  }
+}

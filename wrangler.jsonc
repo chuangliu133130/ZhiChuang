@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "zhi-chuang-tech",
+  "account_id": "48bed0941767c712fb39f1390e5fe31c",
   "main": "src/index.ts",
   "compatibility_date": "2025-05-25",
   "observability": { "enabled": true },
@@ -15,5 +16,8 @@
       "binding": "ZC_LEADS",
       "id": "2a5a0d9728124a98abbc9822606a05a4"
     }
-  ]
+  ],
+  "ai": {
+    "binding": "AI"
+  }
 }

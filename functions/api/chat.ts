@@ -1,5 +1,31 @@
-// Pages Function: POST /api/chat
-const SYSTEM_PROMPT = `你是"智创科技"的AI智能客服，名字叫"小智"。你代表公司热情、专业地与潜在客户沟通。
+// Pages Function: /api/chat
+// Named exports for specific HTTP methods
+export async function onRequestPost(context) {
+  const { request, env } = context;
+
+  // AI Binding check
+  if (!env || !env.AI) {
+    return new Response(JSON.stringify({
+      reply: '',
+      fallback: true,
+      reason: 'AI binding not configured'
+    }), {
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
+  }
+
+  try {
+    const body = await request.json();
+    const messages = body.messages;
+
+    if (!messages || !Array.isArray(messages)) {
+      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    const SYSTEM_PROMPT = `你是"智创科技"的AI智能客服，名字叫"小智"。你代表公司热情、专业地与潜在客户沟通。
 
 【公司背景】
 智创科技是一支全栈技术团队，承接：网页设计开发、微信小程序、iOS/Android App、Java企业级后端、人工智能研发、技术架构咨询。技术负责人是刘朝阳，电话13161505904。
@@ -17,77 +43,25 @@ const SYSTEM_PROMPT = `你是"智创科技"的AI智能客服，名字叫"小智"
 - 回复时不要在末尾加多余的寒暄
 - 一定要在对话中找合适时机询问姓名和电话
 
-【重要】如果客户提供了姓名和手机号，在回复的末尾加上这个标记（单独一行）：
-[LEAD_COLLECTED:姓名=客户名字:电话=手机号]
-
-例如当客户说"我叫张三，电话13800138000"，你回复的最后一行应该是：
-[LEAD_COLLECTED:姓名=张三:电话=13800138000]`;
-
-export async function onRequest(context) {
-  const { request, env } = context;
-
-  // CORS preflight
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
-  }
-
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
-
-  // ── AI Binding Not Available → return fallback flag ──
-  if (!env || !env.AI) {
-    return new Response(JSON.stringify({
-      reply: '',
-      fallback: true,
-      reason: 'AI binding not configured on Cloudflare Pages. Please add AI binding in Dashboard → Settings → Functions.'
-    }), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
-
-  try {
-    const body = await request.json();
-    const messages = body.messages;
-
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
+【重要】客户提供了姓名和手机号，回复末尾加：[LEAD_COLLECTED:姓名=客户名字:电话=手机号]`;
 
     const aiMessages = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    // Available models: @cf/qwen/qwen3-30b-a3b-fp8, @cf/zhipuai/glm-4.7-flash
     const MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
-
-    const response = await env.AI.run(MODEL, {
+    const aiResponse = await env.AI.run(MODEL, {
       messages: aiMessages,
       max_tokens: 512,
       temperature: 0.7,
     });
 
-    // Workers AI returns { response: text } or ReadableStream
     let aiText = '';
-    if (typeof response === 'string') {
-      aiText = response;
-    } else if (response instanceof ReadableStream) {
-      // Stream response — read it
-      const reader = response.getReader();
+    if (typeof aiResponse === 'string') {
+      aiText = aiResponse;
+    } else if (aiResponse instanceof ReadableStream) {
+      const reader = aiResponse.getReader();
       const decoder = new TextDecoder();
       let done = false;
       while (!done) {
@@ -95,13 +69,8 @@ export async function onRequest(context) {
         done = d;
         if (value) aiText += decoder.decode(value, { stream: true });
       }
-    } else if (response?.response) {
-      aiText = response.response;
-    } else if (response?.choices?.[0]?.message?.content) {
-      aiText = response.choices[0].message.content;
-    } else {
-      console.log('AI response format unknown:', JSON.stringify(response).substring(0, 200));
-      aiText = '抱歉，我暂时无法回复，请直接拨打 13161505904 联系刘朝阳。';
+    } else if (aiResponse?.response) {
+      aiText = aiResponse.response;
     }
 
     if (!aiText || aiText.trim().length < 2) {
@@ -117,10 +86,22 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({
       reply: '',
       fallback: true,
-      reason: 'AI model error: ' + (err.message || 'unknown')
+      reason: 'AI error: ' + err.message
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
+}
+
+// Handle OPTIONS for CORS
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 }

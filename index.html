@@ -890,7 +890,10 @@ async function sendMessage() {
       useLocalFallback = true;
     } else {
       const data = await res.json();
-      if (data.reply) {
+      // API returns fallback=true when AI binding is not ready → use local chatbot
+      if (data.fallback) {
+        useLocalFallback = true;
+      } else if (data.reply && data.reply.trim()) {
         replyText = data.reply;
       } else {
         useLocalFallback = true;

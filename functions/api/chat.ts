@@ -26,7 +26,7 @@ const SYSTEM_PROMPT = `你是"智创科技"的AI智能客服，名字叫"小智"
 export async function onRequest(context) {
   const { request, env } = context;
 
-  // CORS
+  // CORS preflight
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -41,6 +41,17 @@ export async function onRequest(context) {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
+  }
+
+  // ── AI Binding Not Available → return fallback flag ──
+  if (!env || !env.AI) {
+    return new Response(JSON.stringify({
+      reply: '',
+      fallback: true,
+      reason: 'AI binding not configured on Cloudflare Pages. Please add AI binding in Dashboard → Settings → Functions.'
+    }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
@@ -61,30 +72,40 @@ export async function onRequest(context) {
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    const response = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+    // Available models: @cf/qwen/qwen3-30b-a3b-fp8, @cf/zhipuai/glm-4.7-flash
+    const MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
+
+    const response = await env.AI.run(MODEL, {
       messages: aiMessages,
       max_tokens: 512,
       temperature: 0.7,
     });
 
-    // Workers AI returns { response: text } or ReadableStream for streaming
+    // Workers AI returns { response: text } or ReadableStream
     let aiText = '';
     if (typeof response === 'string') {
       aiText = response;
     } else if (response instanceof ReadableStream) {
-      aiText = '抱歉，AI流式响应暂不支持，请直接拨打电话 13161505904。';
+      // Stream response — read it
+      const reader = response.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      while (!done) {
+        const { value, done: d } = await reader.read();
+        done = d;
+        if (value) aiText += decoder.decode(value, { stream: true });
+      }
     } else if (response?.response) {
       aiText = response.response;
     } else if (response?.choices?.[0]?.message?.content) {
       aiText = response.choices[0].message.content;
     } else {
-      // Log unknown format
-      console.log('AI response format:', JSON.stringify(response).substring(0, 200));
-      aiText = JSON.stringify(response);
+      console.log('AI response format unknown:', JSON.stringify(response).substring(0, 200));
+      aiText = '抱歉，我暂时无法回复，请直接拨打 13161505904 联系刘朝阳。';
     }
 
-    if (!aiText || aiText.length < 2) {
-      aiText = '抱歉，我暂时无法回复，请直接拨打电话 13161505904 联系刘朝阳。';
+    if (!aiText || aiText.trim().length < 2) {
+      aiText = '抱歉，我暂时无法回复，请直接拨打 13161505904 联系刘朝阳。';
     }
 
     return new Response(JSON.stringify({ reply: aiText }), {
@@ -93,7 +114,11 @@ export async function onRequest(context) {
 
   } catch (err) {
     console.error('AI Chat Error:', err);
-    return new Response(JSON.stringify({ error: 'AI service error', detail: err.message }), {
+    return new Response(JSON.stringify({
+      reply: '',
+      fallback: true,
+      reason: 'AI model error: ' + (err.message || 'unknown')
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });

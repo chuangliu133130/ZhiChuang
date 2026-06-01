@@ -50,10 +50,10 @@ export async function onRequestPost(context) {
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    const MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
+    const MODEL = '@cf/meta/llama-3.2-3b-instruct';
     const aiResponse = await env.AI.run(MODEL, {
       messages: aiMessages,
-      max_tokens: 1024,
+      max_tokens: 512,
       temperature: 0.7,
     });
 
@@ -70,16 +70,22 @@ export async function onRequestPost(context) {
         if (value) aiText += decoder.decode(value, { stream: true });
       }
     } else if (aiResponse) {
-      // OpenAI-compatible format: choices[0].message.content
+      // OpenAI-compatible: choices[0].message.content
       const choice = aiResponse.choices?.[0]?.message;
       if (choice) {
         aiText = choice.content || choice.reasoning_content || '';
       }
-      // Fallback: response field
+      // Non-streaming text generation: response field
       if (!aiText && aiResponse.response) {
         aiText = aiResponse.response;
       }
+      // result field (some models)
+      if (!aiText && aiResponse.result?.response) {
+        aiText = aiResponse.result.response;
+      }
     }
+
+    console.log('AI raw type:', typeof aiResponse, 'aiText length:', aiText?.length || 0);
 
     if (!aiText || aiText.trim().length < 2) {
       aiText = '抱歉，我暂时无法回复，请直接拨打 13161505904 联系刘朝阳。';

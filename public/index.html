@@ -266,8 +266,8 @@ body.chat-open-mobile { overflow:hidden;position:fixed;width:100%; }
   .contact-number { font-size:1.4rem; }
   .footer-inner { flex-direction:column;text-align:center; }
   .process-grid { grid-template-columns:1fr 1fr; }
-  .chat-window { width:calc(100vw - 48px);height:460px;right:0;max-height:460px; }
-  .chat-window.keyboard-open { position:fixed;left:8px;right:8px;width:auto;top:auto;border-radius:var(--radius-md); }
+  .chat-window { position:fixed;bottom:80px;right:12px;width:calc(100vw - 48px);height:460px;max-height:460px; }
+  .chat-window.keyboard-open { position:fixed;left:8px;right:8px;bottom:auto;top:8px;width:auto;border-radius:var(--radius-md); }
 }
 </style>
 </head>
@@ -647,11 +647,16 @@ function openChat() {
     sendInitialGreeting();
   }
 
-  // Delay focus to wait for animation
+  // Delay focus to wait for animation, then aggressively ensure keyboard doesn't cover input
   setTimeout(() => {
     chatInput.focus();
     if (window.innerWidth < 768) {
+      // Multiple retries: keyboard animation takes 300-500ms on iOS, up to 800ms on Android
       adjustChatForKeyboard();
+      setTimeout(() => adjustChatForKeyboard(), 150);
+      setTimeout(() => adjustChatForKeyboard(), 350);
+      setTimeout(() => adjustChatForKeyboard(), 600);
+      setTimeout(() => adjustChatForKeyboard(), 900);
     }
   }, 350);
 }
@@ -689,12 +694,19 @@ function adjustChatForKeyboard() {
 
   if (isKeyboardOpen) {
     chatWindow.classList.add('keyboard-open');
-    // Position chat window above the keyboard, using visual viewport height
-    const availableHeight = vv.height - 20;
+    // Position chat window above the keyboard
+    const availableHeight = vv.height - 16;
     chatWindow.style.top = '8px';
     chatWindow.style.bottom = 'auto';
     chatWindow.style.height = availableHeight + 'px';
-    chatWindow.style.maxHeight = '';
+    chatWindow.style.maxHeight = availableHeight + 'px';
+
+    // Scroll messages to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Force input area into view (belt-and-suspenders)
+    requestAnimationFrame(() => {
+      document.querySelector('.chat-input-area').scrollIntoView({ block: 'end', behavior: 'instant' });
+    });
   } else {
     chatWindow.classList.remove('keyboard-open');
     chatWindow.style.top = '';
@@ -703,7 +715,6 @@ function adjustChatForKeyboard() {
     chatWindow.style.maxHeight = '';
   }
 
-  // Ensure chat messages scroll to bottom
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
@@ -719,14 +730,16 @@ if (window.visualViewport) {
   });
 }
 
-// On input focus, adjust for keyboard
+// On input focus, adjust for keyboard (supplementary to openChat's retries)
 chatInput.addEventListener('focus', () => {
   if (isMobile()) {
-    // Small delay to let keyboard start appearing
     setTimeout(() => {
       adjustChatForKeyboard();
-      // Ensure input is at the bottom of visible area
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      // Extra check: if visualViewport hasn't shrunk yet, try again
+      const vv = window.visualViewport;
+      if (vv && vv.height >= window.innerHeight - 50) {
+        setTimeout(() => adjustChatForKeyboard(), 250);
+      }
     }, 100);
   }
 });

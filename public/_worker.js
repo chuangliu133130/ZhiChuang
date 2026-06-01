@@ -69,6 +69,34 @@ async function handleChat(env, request) {
       aiText = '抱歉，我暂时无法回复，请直接拨打 13161505904 联系刘朝阳。';
     }
 
+    // 服务端自动提取姓名+手机，兜底保存到 KV（不依赖 AI 输出格式）
+    const allUserText = messages.filter(m => m.role === 'user').map(m => m.content).join(' ');
+    let phoneMatch = allUserText.match(/(\d{11})/);
+    let nameMatch = allUserText.match(/(?:我是|我叫|我姓|姓名[：:]\s*|姓[：:]\s*|名字[：:]\s*|是|联系|找)([\u4e00-\u9fa5]{2,4})/);
+    // 兜底：在含手机号的消息中找中文姓名（2-4字）
+    if (!nameMatch && phoneMatch) {
+      const phoneMsg = messages.filter(m => m.role === 'user').find(m => /\d{11}/.test(m.content));
+      if (phoneMsg) {
+        nameMatch = phoneMsg.content.match(/([\u4e00-\u9fa5]{2,4})/);
+      }
+    }
+    if (phoneMatch && nameMatch) {
+      const leadId = `lead_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const ts = new Date().toISOString();
+      const tsCN = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+      const leadData = {
+        id: leadId, name: nameMatch[1].trim(), phone: phoneMatch[1],
+        need: allUserText.substring(0, 200),
+        source: 'AI客服(服务端)', created_at: ts, created_at_cn: tsCN,
+      };
+      try {
+        await env.ZC_LEADS.put(leadId, JSON.stringify(leadData));
+        console.log('Lead saved from server-side:', leadData.name, leadData.phone);
+      } catch (kvErr) {
+        console.error('KV save failed:', kvErr);
+      }
+    }
+
     return json({ reply: aiText });
 
   } catch (err) {

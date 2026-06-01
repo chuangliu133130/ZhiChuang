@@ -188,7 +188,7 @@ body {
 .chat-bubble .pulse-dot { position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:var(--accent-green);border:2px solid #000;animation:pulse 2s ease-in-out infinite; }
 .chat-bubble .unread-badge { position:absolute;top:-4px;right:-4px;background:var(--accent-green);color:#000;font-size:0.7rem;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center; }
 
-.chat-window { position:absolute;bottom:72px;right:0;width:380px;height:520px;background:linear-gradient(180deg,var(--bg-surface) 0%,var(--bg-deep) 100%);border:1px solid var(--border-accent);border-radius:var(--radius-lg);display:none;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(0,198,255,0.1); }
+.chat-window { position:absolute;bottom:72px;right:0;width:380px;height:520px;background:linear-gradient(180deg,var(--bg-surface) 0%,var(--bg-deep) 100%);border:1px solid var(--border-accent);border-radius:var(--radius-lg);display:none;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(0,198,255,0.1);transition:bottom 0.2s ease,max-height 0.2s ease; }
 .chat-window.open { display:flex;animation:slideUp 0.3s ease; }
 @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
 
@@ -250,6 +250,8 @@ body {
   .contact-phone { justify-content:center; }
   .chat-window { width:340px;height:480px;right:0; }
 }
+body.chat-open-mobile { overflow:hidden;position:fixed;width:100%; }
+
 @media (max-width:640px) {
   .nav-links { display:none; }
   .menu-toggle { display:flex; }
@@ -262,7 +264,8 @@ body {
   .contact-number { font-size:1.4rem; }
   .footer-inner { flex-direction:column;text-align:center; }
   .process-grid { grid-template-columns:1fr 1fr; }
-  .chat-window { width:calc(100vw - 48px);height:460px;right:0; }
+  .chat-window { width:calc(100vw - 48px);height:460px;right:0;max-height:460px; }
+  .chat-window.keyboard-open { position:fixed;left:8px;right:8px;width:auto;top:auto;border-radius:var(--radius-md); }
 }
 </style>
 </head>
@@ -625,20 +628,119 @@ let leadCollected = false;
 let leadSaved = false;
 
 // Toggle chat
-chatBubble.addEventListener('click', () => {
-  chatWindow.classList.toggle('open');
-  chatBubble.style.display = chatWindow.classList.contains('open') ? 'none' : 'flex';
-  if (chatWindow.classList.contains('open') && chatHistory.length === 0) {
+let savedScrollY = 0;
+
+function openChat() {
+  chatWindow.classList.add('open');
+  chatBubble.style.display = 'none';
+
+  // Mobile: prevent body scroll when chat is open
+  if (window.innerWidth < 768) {
+    savedScrollY = window.scrollY;
+    document.body.style.top = '-' + savedScrollY + 'px';
+    document.body.classList.add('chat-open-mobile');
+  }
+
+  if (chatHistory.length === 0) {
     sendInitialGreeting();
   }
-  if (chatWindow.classList.contains('open')) {
+
+  // Delay focus to wait for animation
+  setTimeout(() => {
     chatInput.focus();
+    if (window.innerWidth < 768) {
+      adjustChatForKeyboard();
+    }
+  }, 350);
+}
+
+function closeChat() {
+  chatWindow.classList.remove('open');
+  chatWindow.classList.remove('keyboard-open');
+  chatBubble.style.display = 'flex';
+
+  // Restore body scroll on mobile
+  if (document.body.classList.contains('chat-open-mobile')) {
+    document.body.classList.remove('chat-open-mobile');
+    document.body.style.top = '';
+    window.scrollTo(0, savedScrollY);
+  }
+}
+
+chatBubble.addEventListener('click', openChat);
+chatClose.addEventListener('click', closeChat);
+
+// ── Mobile Keyboard Handling ──
+function isMobile() {
+  return window.innerWidth < 768;
+}
+
+function adjustChatForKeyboard() {
+  if (!isMobile() || !chatWindow.classList.contains('open')) return;
+
+  // Use visualViewport API for accurate keyboard detection
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  const keyboardHeight = Math.max(0, window.innerHeight - vv.height);
+  const isKeyboardOpen = keyboardHeight > 100;
+
+  if (isKeyboardOpen) {
+    chatWindow.classList.add('keyboard-open');
+    // Position chat window above the keyboard, using visual viewport height
+    const availableHeight = vv.height - 20;
+    chatWindow.style.top = '8px';
+    chatWindow.style.bottom = 'auto';
+    chatWindow.style.height = availableHeight + 'px';
+    chatWindow.style.maxHeight = '';
+  } else {
+    chatWindow.classList.remove('keyboard-open');
+    chatWindow.style.top = '';
+    chatWindow.style.bottom = '72px';
+    chatWindow.style.height = '';
+    chatWindow.style.maxHeight = '';
+  }
+
+  // Ensure chat messages scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Listen for visualViewport changes (keyboard open/close)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    adjustChatForKeyboard();
+  });
+
+  window.visualViewport.addEventListener('scroll', () => {
+    // iOS Safari scrolls the visual viewport when keyboard opens
+    adjustChatForKeyboard();
+  });
+}
+
+// On input focus, adjust for keyboard
+chatInput.addEventListener('focus', () => {
+  if (isMobile()) {
+    // Small delay to let keyboard start appearing
+    setTimeout(() => {
+      adjustChatForKeyboard();
+      // Ensure input is at the bottom of visible area
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }, 100);
   }
 });
 
-chatClose.addEventListener('click', () => {
-  chatWindow.classList.remove('open');
-  chatBubble.style.display = 'flex';
+// On input blur (keyboard closing), reset position
+chatInput.addEventListener('blur', () => {
+  if (isMobile()) {
+    setTimeout(() => {
+      if (!chatWindow.classList.contains('open')) return;
+      chatWindow.classList.remove('keyboard-open');
+      chatWindow.style.top = '';
+      chatWindow.style.bottom = '72px';
+      chatWindow.style.height = '';
+      chatWindow.style.maxHeight = '';
+    }, 100);
+  }
 });
 
 // Auto-resize textarea
@@ -684,6 +786,59 @@ function removeTyping() {
   if (el) el.remove();
 }
 
+// ── Local Intelligent Chatbot (fallback when AI API is unavailable) ──
+function localChatReply(userMsg) {
+  const msg = userMsg.toLowerCase().replace(/\s+/g, '');
+
+  // Lead collection check
+  const phoneMatch = userMsg.match(/(\d{11})/);
+  const nameMatch = userMsg.match(/(?:我是|我叫|姓名[：:]\s*|我姓|名字[：:]\s*|姓)([\u4e00-\u9fa5]{2,4})/);
+
+  // Service keywords
+  const services = {
+    '网页|网站|官网|前端|react|vue|next': '我们提供<strong>网页设计开发</strong>服务：品牌官网、企业管理系统、SaaS平台。响应式设计，React/Vue/Next.js全栈方案。您具体需要什么类型的网站呢？',
+    '小程序|微信小程序|uniapp|taro': '我们承接<strong>微信小程序</strong>开发：电商、企业展示、预约管理，原生高性能，支持云开发快速上线。您想做什么类型的小程序呢？',
+    'app|ios|安卓|android|iphone|flutter|苹果': '我们的<strong>iOS/Android App</strong>开发覆盖原生(iOS Swift/Android Kotlin)和跨平台(Flutter/React Native)方案，支持AppStore上架一站式服务。',
+    'java|spring|后端|微服务|企业|后台': '我们提供<strong>Java企业级开发</strong>：高并发微服务架构(Spring Boot/Cloud)、分布式系统、企业后台，稳健支撑业务增长。',
+    'ai|人工智能|大模型|智能|算法|深度学习': '我们专注<strong>AI人工智能研发</strong>：大模型应用、智能客服、RAG知识库、图像识别，用AI为业务注入真实商业价值。',
+    '设计|ui|ppt|原型': '我们提供专业的<strong>UI设计与PPT制作</strong>服务，包括界面设计、品牌视觉、动态巡讲稿等。',
+    '价格|多少钱|报价|费用|怎么收费': '具体费用需要根据项目需求评估。您可以留下<strong>姓名和电话</strong>，刘朝阳技术负责人会为您提供免费需求分析和报价方案。📞 131 6150 5904',
+    '咨询|询价|合作|联系|聊聊|了解': '太好了！方便留下您的<strong>姓名和电话</strong>吗？刘朝阳技术负责人的电话是 <strong>131 6150 5904</strong>，也可以直接致电沟通。',
+  };
+
+  for (const [keywords, reply] of Object.entries(services)) {
+    if (new RegExp(keywords, 'i').test(msg)) return reply;
+  }
+
+  // Greetings
+  if (/^(你好|hi|hello|嗨|在吗|您好|早上好|晚上好|下午好)/.test(msg)) {
+    return '👋 您好！我是智创科技的AI智能客服<strong>小智</strong>。\n\n我们承接<strong>网页设计、小程序、iOS/Android App、Java后端、AI大模型研发</strong>等技术服务。\n\n请问您想了解哪方面的服务呢？';
+  }
+
+  // Name provided but no phone
+  if (nameMatch && !phoneMatch) {
+    return `您好${nameMatch[1]}！感谢您的信任。方便留一下<strong>手机号码</strong>吗？刘朝阳（131 6150 5904）会根据您的需求为您提供详细方案。`;
+  }
+
+  // Phone provided but no name
+  if (phoneMatch && !nameMatch) {
+    return `已记录您的电话 <strong>${phoneMatch[1]}</strong>。请问怎么称呼您呢？`;
+  }
+
+  // Name + phone
+  if (phoneMatch && nameMatch) {
+    return `[LEAD_COLLECTED:姓名=${nameMatch[1]}:电话=${phoneMatch[1]}]已收到您的联系方式。感谢 <strong>${nameMatch[1]}</strong>！刘朝阳（131 6150 5904）会尽快与您联系，请保持电话畅通。`;
+  }
+
+  // About company
+  if (/你们|公司|团队|背景|经验|做了|多少/.test(msg)) {
+    return '智创科技是一支<strong>10年+经验</strong>的全栈技术团队，已成功交付<strong>200+项目</strong>，服务<strong>60+企业客户</strong>，交付满意度<strong>99%</strong>。技术负责人刘朝阳，电话 131 6150 5904。';
+  }
+
+  // Default
+  return `感谢您的咨询！为了更好地为您服务，欢迎留下<strong>姓名和电话</strong>，或直接拨打 <strong>131 6150 5904</strong> 联系刘朝阳技术负责人。我们提供网页设计、小程序、App开发、Java后端和AI研发等全方位技术服务。`;
+}
+
 async function sendMessage() {
   const text = chatInput.value.trim();
   if (!text || leadSaved) return;
@@ -693,9 +848,9 @@ async function sendMessage() {
   addMessage('user', text);
   chatHistory.push({ role: 'user', content: text });
 
-  // Check for phone/name in message
+  // Check for phone/name in message (handle lead locally first)
   const phoneMatch = text.match(/(\d{11})/);
-  const nameMatch = text.match(/(?:我是|我叫|姓名[：:]\s*|名字[：:]\s*)([\u4e00-\u9fa5]{2,4})/);
+  const nameMatch = text.match(/(?:我是|我叫|姓名[：:]\s*|我姓|名字[：:]\s*|姓)([\u4e00-\u9fa5]{2,4})/);
 
   if (phoneMatch && nameMatch && !leadCollected) {
     leadCollected = true;
@@ -708,11 +863,15 @@ async function sendMessage() {
     return;
   }
 
-  // Call AI
+  // Show typing indicator
   addTyping();
   chatSend.disabled = true;
   chatInput.disabled = true;
 
+  let replyText = '';
+  let useLocalFallback = false;
+
+  // Try AI API first, fall back to local chatbot
   try {
     const apiMessages = chatHistory.filter(m => m.role !== 'system').slice(-10);
 
@@ -722,31 +881,49 @@ async function sendMessage() {
       body: JSON.stringify({ messages: apiMessages }),
     });
 
-    const data = await res.json();
-    removeTyping();
-
-    if (data.reply) {
-      let reply = data.reply;
-      // Check for LEAD_COLLECTED marker
-      const leadMarker = reply.match(/\[LEAD_COLLECTED:姓名=(.+?):电话=(.+?)\]/);
-      if (leadMarker && !leadCollected) {
-        leadCollected = true;
-        const name = leadMarker[1];
-        const phone = leadMarker[2];
-        reply = reply.replace(/\[LEAD_COLLECTED.*\]/, '').trim();
-
-        addMessage('bot', reply + `<br><br>正在为您提交信息...`);
-        handleLeadSubmit(name, phone);
-      } else {
-        addMessage('bot', reply);
-      }
-      chatHistory.push({ role: 'assistant', content: data.reply });
+    // Check if response is JSON (API working) or HTML (SPA fallback)
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      // API not available, use local chatbot
+      useLocalFallback = true;
     } else {
-      addMessage('bot', '抱歉，AI服务暂时繁忙，请稍后再试或直接拨打 <strong>131 6150 5904</strong> 联系刘朝阳。');
+      const data = await res.json();
+      if (data.reply) {
+        replyText = data.reply;
+      } else {
+        useLocalFallback = true;
+      }
     }
   } catch (err) {
-    removeTyping();
-    addMessage('bot', '网络连接异常，请直接拨打 <strong>131 6150 5904</strong> 联系刘朝阳。');
+    // Network error, use local chatbot
+    useLocalFallback = true;
+  }
+
+  // Use local chatbot fallback
+  if (useLocalFallback) {
+    replyText = localChatReply(text);
+  }
+
+  removeTyping();
+
+  // Process reply
+  if (replyText) {
+    // Check for LEAD_COLLECTED marker
+    const leadMarker = replyText.match(/\[LEAD_COLLECTED:姓名=(.+?):电话=(.+?)\]/);
+    if (leadMarker && !leadCollected) {
+      leadCollected = true;
+      const name = leadMarker[1];
+      const phone = leadMarker[2];
+      replyText = replyText.replace(/\[LEAD_COLLECTED.*\]/, '').trim();
+
+      addMessage('bot', replyText + `<br><br>正在为您提交信息...`);
+      handleLeadSubmit(name, phone);
+    } else {
+      addMessage('bot', replyText);
+    }
+    chatHistory.push({ role: 'assistant', content: replyText });
+  } else {
+    addMessage('bot', '抱歉，服务暂时繁忙，请直接拨打 <strong>131 6150 5904</strong> 联系刘朝阳。');
   }
 
   chatSend.disabled = false;

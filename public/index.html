@@ -188,7 +188,7 @@ body {
 .chat-bubble .pulse-dot { position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:var(--accent-green);border:2px solid #000;animation:pulse 2s ease-in-out infinite; }
 .chat-bubble .unread-badge { position:absolute;top:-4px;right:-4px;background:var(--accent-green);color:#000;font-size:0.7rem;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center; }
 
-.chat-window { position:absolute;bottom:72px;right:0;width:380px;height:520px;background:linear-gradient(180deg,var(--bg-surface) 0%,var(--bg-deep) 100%);border:1px solid var(--border-accent);border-radius:var(--radius-lg);display:none;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(0,198,255,0.1); }
+.chat-window { position:absolute;bottom:72px;right:0;width:380px;height:520px;background:linear-gradient(180deg,var(--bg-surface) 0%,var(--bg-deep) 100%);border:1px solid var(--border-accent);border-radius:var(--radius-lg);display:none;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(0,198,255,0.1);transition:bottom 0.2s ease,max-height 0.2s ease; }
 .chat-window.open { display:flex;animation:slideUp 0.3s ease; }
 @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
 
@@ -250,6 +250,8 @@ body {
   .contact-phone { justify-content:center; }
   .chat-window { width:340px;height:480px;right:0; }
 }
+body.chat-open-mobile { overflow:hidden;position:fixed;width:100%; }
+
 @media (max-width:640px) {
   .nav-links { display:none; }
   .menu-toggle { display:flex; }
@@ -262,7 +264,8 @@ body {
   .contact-number { font-size:1.4rem; }
   .footer-inner { flex-direction:column;text-align:center; }
   .process-grid { grid-template-columns:1fr 1fr; }
-  .chat-window { width:calc(100vw - 48px);height:460px;right:0; }
+  .chat-window { width:calc(100vw - 48px);height:460px;right:0;max-height:460px; }
+  .chat-window.keyboard-open { position:fixed;left:8px;right:8px;width:auto;top:auto;border-radius:var(--radius-md); }
 }
 </style>
 </head>
@@ -625,20 +628,119 @@ let leadCollected = false;
 let leadSaved = false;
 
 // Toggle chat
-chatBubble.addEventListener('click', () => {
-  chatWindow.classList.toggle('open');
-  chatBubble.style.display = chatWindow.classList.contains('open') ? 'none' : 'flex';
-  if (chatWindow.classList.contains('open') && chatHistory.length === 0) {
+let savedScrollY = 0;
+
+function openChat() {
+  chatWindow.classList.add('open');
+  chatBubble.style.display = 'none';
+
+  // Mobile: prevent body scroll when chat is open
+  if (window.innerWidth < 768) {
+    savedScrollY = window.scrollY;
+    document.body.style.top = '-' + savedScrollY + 'px';
+    document.body.classList.add('chat-open-mobile');
+  }
+
+  if (chatHistory.length === 0) {
     sendInitialGreeting();
   }
-  if (chatWindow.classList.contains('open')) {
+
+  // Delay focus to wait for animation
+  setTimeout(() => {
     chatInput.focus();
+    if (window.innerWidth < 768) {
+      adjustChatForKeyboard();
+    }
+  }, 350);
+}
+
+function closeChat() {
+  chatWindow.classList.remove('open');
+  chatWindow.classList.remove('keyboard-open');
+  chatBubble.style.display = 'flex';
+
+  // Restore body scroll on mobile
+  if (document.body.classList.contains('chat-open-mobile')) {
+    document.body.classList.remove('chat-open-mobile');
+    document.body.style.top = '';
+    window.scrollTo(0, savedScrollY);
+  }
+}
+
+chatBubble.addEventListener('click', openChat);
+chatClose.addEventListener('click', closeChat);
+
+// ── Mobile Keyboard Handling ──
+function isMobile() {
+  return window.innerWidth < 768;
+}
+
+function adjustChatForKeyboard() {
+  if (!isMobile() || !chatWindow.classList.contains('open')) return;
+
+  // Use visualViewport API for accurate keyboard detection
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  const keyboardHeight = Math.max(0, window.innerHeight - vv.height);
+  const isKeyboardOpen = keyboardHeight > 100;
+
+  if (isKeyboardOpen) {
+    chatWindow.classList.add('keyboard-open');
+    // Position chat window above the keyboard, using visual viewport height
+    const availableHeight = vv.height - 20;
+    chatWindow.style.top = '8px';
+    chatWindow.style.bottom = 'auto';
+    chatWindow.style.height = availableHeight + 'px';
+    chatWindow.style.maxHeight = '';
+  } else {
+    chatWindow.classList.remove('keyboard-open');
+    chatWindow.style.top = '';
+    chatWindow.style.bottom = '72px';
+    chatWindow.style.height = '';
+    chatWindow.style.maxHeight = '';
+  }
+
+  // Ensure chat messages scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Listen for visualViewport changes (keyboard open/close)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    adjustChatForKeyboard();
+  });
+
+  window.visualViewport.addEventListener('scroll', () => {
+    // iOS Safari scrolls the visual viewport when keyboard opens
+    adjustChatForKeyboard();
+  });
+}
+
+// On input focus, adjust for keyboard
+chatInput.addEventListener('focus', () => {
+  if (isMobile()) {
+    // Small delay to let keyboard start appearing
+    setTimeout(() => {
+      adjustChatForKeyboard();
+      // Ensure input is at the bottom of visible area
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }, 100);
   }
 });
 
-chatClose.addEventListener('click', () => {
-  chatWindow.classList.remove('open');
-  chatBubble.style.display = 'flex';
+// On input blur (keyboard closing), reset position
+chatInput.addEventListener('blur', () => {
+  if (isMobile()) {
+    setTimeout(() => {
+      if (!chatWindow.classList.contains('open')) return;
+      chatWindow.classList.remove('keyboard-open');
+      chatWindow.style.top = '';
+      chatWindow.style.bottom = '72px';
+      chatWindow.style.height = '';
+      chatWindow.style.maxHeight = '';
+    }, 100);
+  }
 });
 
 // Auto-resize textarea

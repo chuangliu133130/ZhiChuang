@@ -53,7 +53,7 @@ export async function onRequestPost(context) {
     const MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
     const aiResponse = await env.AI.run(MODEL, {
       messages: aiMessages,
-      max_tokens: 512,
+      max_tokens: 1024,
       temperature: 0.7,
     });
 
@@ -69,8 +69,16 @@ export async function onRequestPost(context) {
         done = d;
         if (value) aiText += decoder.decode(value, { stream: true });
       }
-    } else if (aiResponse?.response) {
-      aiText = aiResponse.response;
+    } else if (aiResponse) {
+      // OpenAI-compatible format: choices[0].message.content
+      const choice = aiResponse.choices?.[0]?.message;
+      if (choice) {
+        aiText = choice.content || choice.reasoning_content || '';
+      }
+      // Fallback: response field
+      if (!aiText && aiResponse.response) {
+        aiText = aiResponse.response;
+      }
     }
 
     if (!aiText || aiText.trim().length < 2) {

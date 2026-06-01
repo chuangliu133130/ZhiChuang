@@ -4,6 +4,7 @@
   "account_id": "48bed0941767c712fb39f1390e5fe31c",
   "pages_build_output_dir": "./public",
   "compatibility_date": "2025-05-25",
+  "compatibility_flags": ["nodejs_compat"],
   "kv_namespaces": [
     {
       "binding": "ZC_LEADS",
